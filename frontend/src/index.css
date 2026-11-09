@@ -1,0 +1,219 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f6f1e7;
+  --color-paper-2: #efe8da;
+  --color-paper-3: #e7dfcd;
+  --color-ink: #14201c;
+  --color-ink-muted: #5b6560;
+  --color-ink-faint: #8a918c;
+  --color-hairline: #d9d0bf;
+  --color-emerald: #0f5c4a;
+  --color-emerald-deep: #0a4537;
+  --color-emerald-tint: #ddede6;
+  --color-saffron: #e0862b;
+  --color-saffron-tint: #f7e6d2;
+  --color-red: #b3412e;
+  --color-red-tint: #f3ddd8;
+
+  --font-display: "Fraunces", "Georgia", serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Paper grain */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 72, "SOFT" 30;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.leaders {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.leaders::after {
+  content: "";
+  flex: 1;
+  order: 1;
+  border-bottom: 1px dotted var(--color-hairline);
+  transform: translateY(-3px);
+}
+.leaders > :last-child {
+  order: 2;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hairline) transparent;
+}
+
+/* Markdown answer typography */
+.prose-answer {
+  font-size: 15px;
+  line-height: 1.65;
+}
+.prose-answer > :first-child {
+  margin-top: 0;
+}
+.prose-answer p {
+  margin: 0 0 0.85em;
+}
+.prose-answer p:first-child {
+  font-size: 17px;
+  line-height: 1.5;
+}
+.prose-answer strong {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+.prose-answer ul, .prose-answer ol {
+  margin: 0.25em 0 0.9em 1.15em;
+  padding: 0;
+}
+.prose-answer li {
+  margin: 0.3em 0;
+}
+.prose-answer li::marker {
+  color: var(--color-emerald);
+}
+.prose-answer h1, .prose-answer h2, .prose-answer h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 1.1em;
+  margin: 1.1em 0 0.4em;
+}
+.prose-answer table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0 1em;
+  font-size: 14px;
+}
+.prose-answer th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  padding: 0.45em 0.6em 0.45em 0;
+  border-bottom: 1px solid var(--color-ink);
+}
+.prose-answer td {
+  padding: 0.5em 0.6em 0.5em 0;
+  border-bottom: 1px solid var(--color-hairline);
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+.prose-answer td:not(:first-child), .prose-answer th:not(:first-child) {
+  text-align: right;
+}
+.prose-answer code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--color-paper-2);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.prose-answer em {
+  color: var(--color-ink-muted);
+}
+.prose-answer hr {
+  border: 0;
+  border-top: 1px solid var(--color-hairline);
+  margin: 1em 0;
+}
+
+.cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35em;
+  height: 1.35em;
+  padding: 0 0.3em;
+  margin: 0 0.12em;
+  border: 1px solid var(--color-emerald);
+  border-radius: 4px;
+  color: var(--color-emerald);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  line-height: 1;
+  vertical-align: 0.25em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.cite:hover, .cite.is-active {
+  background: var(--color-emerald);
+  color: var(--color-paper);
+}
+
+@keyframes caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 2px;
+  background: var(--color-emerald);
+  vertical-align: -0.15em;
+  animation: caret 1s steps(1) infinite;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.rise {
+  animation: rise 260ms ease-out both;
+}
+
+.source-card.is-active {
+  border-color: var(--color-emerald);
+  background: var(--color-emerald-tint);
+}
