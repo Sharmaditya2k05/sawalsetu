@@ -119,7 +119,7 @@ export default function Conversation(props: Props) {
           </div>
           <p className="mt-2 text-center text-[11.5px] text-ink-faint">
             Answers are grounded in your MargBooks data ·{' '}
-            {status?.llm.provider === 'claude' ? 'Claude' : 'offline retrieval mode'} · Enter to send, Shift+Enter for a new line
+            {status?.llm.provider === 'groq' ? 'Groq' : status?.llm.provider === 'claude' ? 'Claude' : 'offline retrieval mode'} · Enter to send, Shift+Enter for a new line
           </p>
         </div>
       </div>

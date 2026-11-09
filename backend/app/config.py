@@ -32,6 +32,13 @@ class Settings:
     # Business identity shown in the UI and used in prompts
     company_name: str = field(default_factory=lambda: _env("COMPANY_NAME", "Shree Balaji Distributors"))
 
+    # LLM provider: auto (groq if GROQ_API_KEY, else claude if ANTHROPIC_API_KEY, else offline) | groq | claude | offline
+    llm_provider: str = field(default_factory=lambda: _env("LLM_PROVIDER", "auto"))
+
+    # Groq (free tier at https://console.groq.com) – OpenAI-compatible chat completions
+    groq_api_key: str = field(default_factory=lambda: _env("GROQ_API_KEY"))
+    groq_model: str = field(default_factory=lambda: _env("GROQ_MODEL", "llama-3.3-70b-versatile"))
+
     # Claude
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
     claude_model: str = field(default_factory=lambda: _env("CLAUDE_MODEL", "claude-opus-5-5"))
@@ -58,8 +65,23 @@ class Settings:
         return start, today
 
     @property
+    def resolved_llm_provider(self) -> str:
+        p = self.llm_provider.lower()
+        if p == "auto":
+            if self.groq_api_key:
+                return "groq"
+            if self.anthropic_api_key:
+                return "claude"
+            return "offline"
+        if p == "groq" and not self.groq_api_key:
+            return "offline"
+        if p == "claude" and not self.anthropic_api_key:
+            return "offline"
+        return p
+
+    @property
     def llm_available(self) -> bool:
-        return bool(self.anthropic_api_key)
+        return self.resolved_llm_provider != "offline"
 
 
 settings = Settings()

@@ -70,7 +70,27 @@ Documentation portal: <https://openapiweb.margbooks.com>. Production base URL
 
 The connector tolerates modules that are not enabled for an account (it logs and continues).
 
-## Run it
+## Deploy on Streamlit Community Cloud (quickest)
+
+`sawalsetu_app.py` is a Streamlit front end that runs the same pipeline in-process, so the whole
+app deploys as one Python process.
+
+1. Push this repo to GitHub (already at `kinbox-ctrl/sawalsetu`).
+2. On [share.streamlit.io](https://share.streamlit.io) choose **Create app → Deploy a public app
+   from GitHub**, pick the repo, branch `main`, main file `sawalsetu_app.py`.
+3. Under **Advanced settings → Secrets** paste the keys from
+   `.streamlit/secrets.toml.example` (at minimum `GROQ_API_KEY` from console.groq.com; add `MARGBOOKS_MODE="live"`,
+   `MARGBOOKS_MB_KEY`, `MARGBOOKS_PARTNER_ID` for real data).
+4. Deploy. The first start syncs the demo dataset; **Sync now** pulls from MargBooks in live mode.
+
+Run it locally with:
+
+```bash
+pip install -r requirements.txt
+streamlit run sawalsetu_app.py
+```
+
+## Run the API + React version
 
 ### 1. Backend
 
@@ -98,9 +118,9 @@ npm run dev                   # http://localhost:5173, proxies /api to :8000
 `npm run build` writes `frontend/dist`, which the backend serves at `/` when present, so a
 single `uvicorn` process can host the whole app in production.
 
-### 3. Claude
+### 3. LLM (Groq free tier or Claude)
 
-Set `ANTHROPIC_API_KEY` in `.env`. Default model is `claude-opus-5-5` with adaptive thinking
+Set `GROQ_API_KEY` in `.env` (free key at console.groq.com; default model `llama-3.3-70b-versatile`), or `ANTHROPIC_API_KEY` for Claude (`claude-opus-5-5` with adaptive thinking
 at `CLAUDE_EFFORT=medium`; responses stream over SSE. Without a key the app runs in **offline
 mode**, returning the best-matching passages instead of a generated answer, which is useful
 for checking retrieval on its own.

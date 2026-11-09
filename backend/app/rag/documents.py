@@ -316,6 +316,22 @@ def analytics_documents(data: dict[str, list[dict]], company: str, today: date) 
             receivables_rows.append({"party": name, "pending": round(pending_amt, 2), "overdue": round(overdue_amt, 2),
                                      "invoices": len(pending), "oldest": oldest_pending.isoformat() if oldest_pending else None})
 
+    # -- customer ranking -------------------------------------------------------
+    ranked_named = [(n, rows) for n, rows in ranked_customers if n != "Cash Account"]
+    text = (
+        f"Top customers ranked by sales at {company} ({month_label(next(iter(sales_by_month), month_key(today)))} to "
+        f"{month_label(next(reversed(sales_by_month), month_key(today)))}). Top 10 customers by total billing: "
+        + "; ".join(
+            f"#{i} {n} {inr(sum(_amount(r) for r in rows))} ({len(rows)} invoices, pending "
+            f"{inr(sum(_amount(r) for r in rows if r.get('status') == 'Pending'))})"
+            for i, (n, rows) in enumerate(ranked_named[:10], start=1)
+        )
+        + f". The top 5 customers together account for "
+        f"{sum(_amount(r) for _, rows in ranked_named[:5] for r in rows) / total_sales_all * 100:.1f}% of sales."
+    )
+    docs.append(Document(id="analytics:top_customers", text=text, kind="analytics",
+                         title="Top customers by sales", metadata={}))
+
     # -- supplier profiles ------------------------------------------------------
     suppliers: dict[str, list[dict]] = defaultdict(list)
     for r in purchases:
@@ -343,6 +359,19 @@ def analytics_documents(data: dict[str, list[dict]], company: str, today: date) 
         docs.append(Document(id=f"analytics:supplier:{name}", text=text, kind="analytics",
                              title=f"Supplier profile – {name}", metadata={"party": name, "total": total}))
 
+    ranked_suppliers = sorted(suppliers.items(), key=lambda kv: sum(_amount(r) for r in kv[1]), reverse=True)
+    text = (
+        f"Top suppliers ranked by purchase value at {company}: "
+        + "; ".join(
+            f"#{i} {n} {inr(sum(_amount(r) for r in rows))} ({len(rows)} bills, payable "
+            f"{inr(sum(_amount(r) for r in rows if r.get('status') == 'Pending'))})"
+            for i, (n, rows) in enumerate(ranked_suppliers[:10], start=1)
+        )
+        + f". Total payable to suppliers (unpaid purchase bills): {inr(payables_total)}."
+    )
+    docs.append(Document(id="analytics:top_suppliers", text=text, kind="analytics",
+                         title="Top suppliers by purchases", metadata={}))
+
     # -- receivables ageing -----------------------------------------------------
     buckets = {"0-30 days": 0.0, "31-60 days": 0.0, "61-90 days": 0.0, "over 90 days": 0.0}
     bucket_counts = {k: 0 for k in buckets}
@@ -355,12 +384,14 @@ def analytics_documents(data: dict[str, list[dict]], company: str, today: date) 
     receivables_total = sum(buckets.values())
     receivables_rows.sort(key=lambda x: x["pending"], reverse=True)
     text = (
-        f"Receivables (outstanding / udhaar) ageing report for {company} as of {today.strftime('%d %b %Y')}: total "
+        f"Party-wise receivables (outstanding / udhaar / debtors) ageing report for {company} as of {today.strftime('%d %b %Y')}. "
+        f"Which party has the highest outstanding: {receivables_rows[0]['party'] if receivables_rows else 'none'} with "
+        f"{inr(receivables_rows[0]['pending']) if receivables_rows else inr(0)} pending. Total "
         f"receivable {inr(receivables_total)} across {len(pending_all)} unpaid invoices. Ageing: "
         + "; ".join(f"{k}: {inr(v)} ({bucket_counts[k]} invoices)" for k, v in buckets.items()) + ". "
         f"Largest debtors: " + "; ".join(f"{r['party']} {inr(r['pending'])} (overdue {inr(r['overdue'])})" for r in receivables_rows[:8]) + "."
     )
-    docs.append(Document(id="analytics:receivables", text=text, kind="analytics", title="Receivables ageing",
+    docs.append(Document(id="analytics:receivables", text=text, kind="analytics", title="Receivables ageing – party-wise outstanding",
                          metadata={"total": receivables_total}))
 
     # -- e-commerce -------------------------------------------------------------

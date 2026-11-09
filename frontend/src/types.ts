@@ -3,7 +3,7 @@ export interface Status {
   mode: 'demo' | 'live'
   source: string
   base_url: string | null
-  llm: { provider: 'claude' | 'offline'; model: string | null }
+  llm: { provider: 'groq' | 'claude' | 'offline'; model: string | null }
   embeddings: string
   documents: number
   last_sync: string | null

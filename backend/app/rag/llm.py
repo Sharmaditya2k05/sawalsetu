@@ -7,6 +7,7 @@ demos and so retrieval quality can be inspected on its own.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import AsyncIterator, Iterable
 
@@ -33,7 +34,14 @@ How to answer:
 - When a question asks for advice (who to chase for payment, which items to push), ground every recommendation in the
   numbers from the context and say why.
 - Use short Markdown: a lead sentence, then bullets or a small table when comparing several parties or months.
-  No headings larger than ###."""
+  No headings larger than ###.
+- When one figure is the heart of the answer (a total, the top party's balance, a month's sales), put it in a
+  headline block right after the lead sentence, written exactly as a blockquote whose first line is the figure,
+  second line a 2-4 word label in italics, then 1-3 supporting bullets, e.g.
+  > ₹18.4 L
+  > _Highest outstanding_
+  > - Total receivables: ₹75.6 L [2]
+  > - Overdue: ₹27.1 L (35.8%) [2]"""
 
 
 def format_context(docs: Iterable[Document]) -> str:
@@ -41,6 +49,56 @@ def format_context(docs: Iterable[Document]) -> str:
     for i, d in enumerate(docs, start=1):
         lines.append(f"[{i}] ({d.title}) {d.text}")
     return "\n\n".join(lines)
+
+
+class GroqAnswerer:
+    """Groq's OpenAI-compatible chat completions API (free tier), streamed over SSE."""
+
+    name = "groq"
+    url = "https://api.groq.com/openai/v1/chat/completions"
+
+    def __init__(self, settings: Settings):
+        self.api_key = settings.groq_api_key
+        self.model = settings.groq_model
+        self.company = settings.company_name
+
+    async def stream(self, question: str, docs: list[Document], history: list[dict]) -> AsyncIterator[dict]:
+        import httpx
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(company=self.company)}]
+        messages += [{"role": m["role"], "content": m["content"]} for m in history[-8:] if m.get("content")]
+        messages.append({
+            "role": "user",
+            "content": f"Context passages from MargBooks:\n\n{format_context(docs)}\n\nQuestion: {question}",
+        })
+        body = {"model": self.model, "messages": messages, "stream": True, "temperature": 0.2, "max_tokens": 2048}
+        usage = None
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+            async with client.stream("POST", self.url, json=body,
+                                     headers={"Authorization": f"Bearer {self.api_key}"}) as resp:
+                if resp.status_code != 200:
+                    detail = (await resp.aread()).decode("utf-8", "replace")[:400]
+                    raise RuntimeError(f"Groq API error {resp.status_code}: {detail}")
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    for choice in chunk.get("choices", []):
+                        text = (choice.get("delta") or {}).get("content")
+                        if text:
+                            yield {"type": "token", "text": text}
+                    usage = (chunk.get("x_groq") or {}).get("usage") or chunk.get("usage") or usage
+        yield {
+            "type": "done",
+            "model": self.model,
+            "usage": {"input_tokens": usage.get("prompt_tokens"), "output_tokens": usage.get("completion_tokens")} if usage else None,
+        }
 
 
 class ClaudeAnswerer:
@@ -102,6 +160,7 @@ class OfflineAnswerer:
     """Extractive fallback: no LLM, just the best passages written up as an answer."""
 
     name = "offline"
+    model = None
 
     def __init__(self, settings: Settings):
         self.company = settings.company_name
@@ -115,8 +174,17 @@ class OfflineAnswerer:
         analytics = [d for d in docs if d.kind == "analytics"][:3]
         records = [d for d in docs if d.kind != "analytics"][:4]
         chunks: list[str] = []
-        chunks.append("_Offline mode (no ANTHROPIC_API_KEY set) – showing the most relevant passages from your MargBooks data instead of a generated answer._\n\n")
+        chunks.append("_Offline mode (no GROQ_API_KEY or ANTHROPIC_API_KEY set) – showing the most relevant passages from your MargBooks data instead of a generated answer._\n\n")
         if analytics:
+            top = analytics[0]
+            amounts = re.findall(r"₹[\d,]+(?:\.\d+)?", top.text)
+            if amounts:
+                idx = docs.index(top) + 1
+                facts = [s for s in re.split(r"(?<=[.!?;:])\s+", top.text) if "₹" in s][1:3]
+                chunks.append(f"> {_short_inr(amounts[0])}\n> _{top.title}_\n")
+                for f in facts:
+                    chunks.append(f"> - {f.strip().rstrip('.;:')} [{idx}]\n")
+                chunks.append("\n")
             chunks.append("**From the summaries:**\n\n")
             for d in analytics:
                 idx = docs.index(d) + 1
@@ -132,12 +200,24 @@ class OfflineAnswerer:
         yield {"type": "done", "model": "offline", "usage": None}
 
 
+def _short_inr(raw: str) -> str:
+    value = float(raw.replace("₹", "").replace(",", ""))
+    if value >= 1e7:
+        return f"₹{value / 1e7:.2f} Cr"
+    if value >= 1e5:
+        return f"₹{value / 1e5:.1f} L"
+    return raw
+
+
 def _first_sentences(text: str, n: int) -> str:
     parts = re.split(r"(?<=[.!?])\s+", text.strip())
     return " ".join(parts[:n])
 
 
 def build_answerer(settings: Settings):
-    if settings.llm_available:
+    provider = settings.resolved_llm_provider
+    if provider == "groq":
+        return GroqAnswerer(settings)
+    if provider == "claude":
         return ClaudeAnswerer(settings)
     return OfflineAnswerer(settings)

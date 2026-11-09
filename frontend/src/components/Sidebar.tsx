@@ -104,13 +104,13 @@ export default function Sidebar({ status, suggestions, syncing, onSync, onAsk, s
       <div className="mt-auto space-y-3 pt-2">
         <div className="flex items-center gap-2 text-[12px] text-ink-muted">
           <Cpu className="h-3.5 w-3.5" />
-          {status?.llm.provider === 'claude' ? (
+          {status && status.llm.provider !== 'offline' ? (
             <span>
               Answers by <span className="font-medium text-ink">{status.llm.model}</span>
             </span>
           ) : (
             <span>
-              Offline mode · <span className="font-medium text-ink">set ANTHROPIC_API_KEY</span>
+              Offline mode · <span className="font-medium text-ink">set GROQ_API_KEY</span>
             </span>
           )}
         </div>

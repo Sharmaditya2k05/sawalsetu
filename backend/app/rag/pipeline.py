@@ -44,6 +44,9 @@ class Pipeline:
         self.index = HybridIndex.load(self.index_dir, self.embedder)
         if self.index is None and (snap := load_snapshot(self.snapshot_path)):
             self._build_index(snap)
+            if not self.meta:
+                self.meta = {"counts": {k: len(v) for k, v in snap.items() if isinstance(v, list)}, "kpis": self.kpis,
+                             "last_sync": datetime.now(timezone.utc).isoformat()}
 
     def _build_index(self, data: dict[str, list[dict]]) -> None:
         docs, kpis = build_documents(data, self.settings.company_name, date.today())
@@ -58,7 +61,7 @@ class Pipeline:
             "mode": self.settings.margbooks_mode,
             "source": "MargBooks Open API" if self.settings.margbooks_mode == "live" else "Demo dataset (MargBooks schema)",
             "base_url": self.settings.margbooks_base_url if self.settings.margbooks_mode == "live" else None,
-            "llm": {"provider": self.answerer.name, "model": self.settings.claude_model if self.answerer.name == "claude" else None},
+            "llm": {"provider": self.answerer.name, "model": getattr(self.answerer, "model", None)},
             "embeddings": self.embedder.name if self.embedder else "bm25-only",
             "documents": len(self.index.documents) if self.index else 0,
             "last_sync": self.meta.get("last_sync"),
