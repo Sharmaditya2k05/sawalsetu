@@ -1,4 +1,4 @@
-# Streamlit Community Cloud entry point: sawalsetu_app.py
+# Streamlit Community Cloud entry point: streamlit_app.py
 streamlit>=1.40
 altair>=5
 pandas>=2.1

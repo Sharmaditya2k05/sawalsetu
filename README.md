@@ -72,12 +72,12 @@ The connector tolerates modules that are not enabled for an account (it logs and
 
 ## Deploy on Streamlit Community Cloud (quickest)
 
-`sawalsetu_app.py` is a Streamlit front end that runs the same pipeline in-process, so the whole
+`streamlit_app.py` is a Streamlit front end that runs the same pipeline in-process, so the whole
 app deploys as one Python process.
 
 1. Push this repo to GitHub (already at `kinbox-ctrl/sawalsetu`).
 2. On [share.streamlit.io](https://share.streamlit.io) choose **Create app → Deploy a public app
-   from GitHub**, pick the repo, branch `main`, main file `sawalsetu_app.py`.
+   from GitHub**, pick the repo, branch `main`, main file `streamlit_app.py`.
 3. Under **Advanced settings → Secrets** paste the keys from
    `.streamlit/secrets.toml.example` (at minimum `GROQ_API_KEY` from console.groq.com; add `MARGBOOKS_MODE="live"`,
    `MARGBOOKS_MB_KEY`, `MARGBOOKS_PARTNER_ID` for real data).
@@ -87,7 +87,7 @@ Run it locally with:
 
 ```bash
 pip install -r requirements.txt
-streamlit run sawalsetu_app.py
+streamlit run streamlit_app.py
 ```
 
 ## Run the API + React version
