@@ -56,22 +56,55 @@ class GroqAnswerer:
 
     name = "groq"
     url = "https://api.groq.com/openai/v1/chat/completions"
+    models_url = "https://api.groq.com/openai/v1/models"
+    # Groq retires free models every few months; fall back down this list when the configured one is gone.
+    PREFERRED = (
+        "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b",
+        "meta-llama/llama-4-scout-17b-16e-instruct", "qwen/qwen3-32b", "llama-3.1-8b-instant",
+    )
+    _available: dict[str, list[str]] = {}  # api-key fingerprint -> model ids (process-wide cache)
 
     def __init__(self, settings: Settings):
         self.api_key = settings.groq_api_key
         self.model = settings.groq_model
         self.company = settings.company_name
 
+    def available_models(self) -> list[str]:
+        import httpx
+
+        key = self.api_key[-8:]
+        if key not in self._available:
+            r = httpx.get(self.models_url, timeout=15, headers={"Authorization": f"Bearer {self.api_key}"})
+            if r.status_code != 200:
+                raise RuntimeError(f"Groq key rejected ({r.status_code}): {r.text[:200]}")
+            self._available[key] = [m["id"] for m in r.json().get("data", [])]
+        return self._available[key]
+
+    def resolve_model(self) -> str:
+        """Return the configured model if Groq still serves it, otherwise the best available one."""
+        ids = self.available_models()
+        if self.model in ids:
+            return self.model
+        for candidate in self.PREFERRED:
+            if candidate in ids:
+                self.model = candidate
+                return candidate
+        if ids:
+            self.model = ids[0]
+            return ids[0]
+        raise RuntimeError("Groq returned no available models for this key")
+
     async def stream(self, question: str, docs: list[Document], history: list[dict]) -> AsyncIterator[dict]:
         import httpx
 
+        model = self.resolve_model()
         messages = [{"role": "system", "content": SYSTEM_PROMPT.format(company=self.company)}]
         messages += [{"role": m["role"], "content": m["content"]} for m in history[-8:] if m.get("content")]
         messages.append({
             "role": "user",
             "content": f"Context passages from MargBooks:\n\n{format_context(docs)}\n\nQuestion: {question}",
         })
-        body = {"model": self.model, "messages": messages, "stream": True, "temperature": 0.2, "max_tokens": 2048}
+        body = {"model": model, "messages": messages, "stream": True, "temperature": 0.2, "max_tokens": 2048}
         usage = None
         async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
             async with client.stream("POST", self.url, json=body,
@@ -96,7 +129,7 @@ class GroqAnswerer:
                     usage = (chunk.get("x_groq") or {}).get("usage") or chunk.get("usage") or usage
         yield {
             "type": "done",
-            "model": self.model,
+            "model": model,
             "usage": {"input_tokens": usage.get("prompt_tokens"), "output_tokens": usage.get("completion_tokens")} if usage else None,
         }
 

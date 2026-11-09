@@ -212,24 +212,76 @@ def source_card(s: dict) -> str:
     )
 
 
+LLM_TIMEOUT_S = 90
+
+
+@st.cache_resource(ttl=600, show_spinner=False)
+def llm_health(provider: str, key_fingerprint: str) -> tuple[bool, str]:
+    """Cheap, cached check that the configured LLM key actually works (shown in the footer)."""
+    import httpx
+
+    try:
+        if provider == "groq":
+            from app.rag.llm import GroqAnswerer
+
+            answerer = GroqAnswerer(settings)
+            model = answerer.resolve_model()
+            note = "" if model == settings.groq_model else f" (GROQ_MODEL '{settings.groq_model}' unavailable)"
+            return True, f"Groq · {model}{note}"
+        if provider == "claude":
+            return True, f"Claude · {settings.claude_model}"
+        return False, "Offline mode – add GROQ_API_KEY in secrets for written answers"
+    except Exception as exc:  # network problems etc.
+        return False, f"Cannot reach {provider}: {exc}"
+
+
 def answer_stream(question: str, history: list[dict], placeholder, sources_box) -> tuple[str, list[dict]]:
-    """Stream the pipeline's answer into a placeholder; returns (text, sources)."""
+    """Stream the pipeline's answer into a placeholder; returns (text, sources).
+
+    If the model call fails or exceeds LLM_TIMEOUT_S, the error is shown and the offline
+    (retrieval-only) answer is rendered instead, so the user is never left waiting.
+    """
     pipeline.answerer = build_answerer(settings)  # fresh async client per event loop
+    provider = pipeline.answerer.name
     buf: list[str] = []
     sources: list[dict] = []
+    started = datetime.now()
 
-    async def run():
-        async for ev in pipeline.answer(question, history):
+    def paint(suffix: str = " ▍") -> None:
+        placeholder.markdown(render_answer("".join(buf)) + suffix, unsafe_allow_html=True)
+
+    async def consume(gen) -> None:
+        async for ev in gen:
             if ev["type"] == "sources":
                 sources.extend(ev["sources"])
                 sources_box.html("".join(source_card(s) for s in sources[:6]))
             elif ev["type"] == "token":
                 buf.append(ev["text"])
-                placeholder.markdown(render_answer("".join(buf)) + " ▍", unsafe_allow_html=True)
+                paint()
             elif ev["type"] == "error":
-                buf.append(f"\n\n_Error: {ev['message']}_")
+                raise RuntimeError(ev["message"])
 
-    asyncio.run(run())
+    async def run() -> None:
+        await asyncio.wait_for(consume(pipeline.answer(question, history)), timeout=LLM_TIMEOUT_S)
+
+    placeholder.markdown(f"_Thinking with {provider.title()}…_" if provider != "offline" else "_Reading your books…_")
+    try:
+        asyncio.run(run())
+    except Exception as exc:
+        elapsed = (datetime.now() - started).total_seconds()
+        reason = f"{provider.title()} timed out after {elapsed:.0f}s" if isinstance(exc, asyncio.TimeoutError) else f"{provider.title()} error: {exc}"
+        buf.clear()
+        buf.append(f"_⚠ {reason}. Showing the matching MargBooks passages instead._\n\n")
+        docs = [d for d, _ in pipeline.retrieve(question)]
+        from app.rag.llm import OfflineAnswerer
+
+        async def fallback() -> None:
+            async for ev in OfflineAnswerer(settings).stream(question, docs, history):
+                if ev["type"] == "token":
+                    buf.append(ev["text"])
+                    paint()
+
+        asyncio.run(fallback())
     text = "".join(buf)
     placeholder.markdown(render_answer(text), unsafe_allow_html=True)
     return text, sources
@@ -270,12 +322,10 @@ with left:
             st.rerun()
     fy_start = datetime.now().year if datetime.now().month >= 4 else datetime.now().year - 1
     llm = status["llm"]
-    llm_label = {"groq": f"Groq · {llm['model']}", "claude": f"Claude · {llm['model']}"}.get(
-        llm["provider"], "Offline mode – add GROQ_API_KEY in secrets for written answers"
-    )
+    ok, llm_label = llm_health(llm["provider"], (settings.groq_api_key or settings.anthropic_api_key)[-6:])
     st.html(
         f'<div class="foot"><span>🏪&nbsp; {esc(status["company"])} · FY {fy_start}-{str(fy_start + 1)[-2:]}</span><span>⚙</span></div>'
-        f'<div class="hint">Answers by {esc(llm_label)}</div>'
+        f'<div class="hint" style="color:{"#0F5C4A" if ok else "#B3412E"}">{"●" if ok else "▲"} {esc(llm_label)}</div>'
     )
 
 with right:
@@ -355,7 +405,6 @@ with center:
         st.html(f'<div class="who"><b>SawalSetu</b> · Today, {now}</div>')
         with st.container(key=f"ans-live-{len(msgs)}"):
             placeholder = st.empty()
-        placeholder.markdown("_Reading your books…_")
         history = [{"role": m["role"], "content": m["content"]} for m in msgs]
         text, sources = answer_stream(pending, history, placeholder, sources_box)
         msgs.append({"role": "user", "content": pending, "at": now})

@@ -41,12 +41,25 @@ class Pipeline:
         if self.meta_path.exists():
             self.meta = json.loads(self.meta_path.read_text(encoding="utf-8"))
             self.kpis = self.meta.get("kpis", {})
-        self.index = HybridIndex.load(self.index_dir, self.embedder)
+        if self.meta and self.kpis:
+            self.index = HybridIndex.load(self.index_dir, self.embedder)
+        # No usable index/meta pair on disk: rebuild everything from the last snapshot if we have one.
         if self.index is None and (snap := load_snapshot(self.snapshot_path)):
             self._build_index(snap)
-            if not self.meta:
-                self.meta = {"counts": {k: len(v) for k, v in snap.items() if isinstance(v, list)}, "kpis": self.kpis,
-                             "last_sync": datetime.now(timezone.utc).isoformat()}
+            self._write_meta(snap, source="snapshot", duration_s=0.0,
+                             last_sync=self.meta.get("last_sync") or datetime.now(timezone.utc).isoformat())
+
+    def _write_meta(self, data: dict[str, list[dict]], source: str, duration_s: float, last_sync: str | None = None) -> None:
+        start, end = self.settings.sync_window
+        self.meta = {
+            "last_sync": last_sync or datetime.now(timezone.utc).isoformat(),
+            "sync_window": self.meta.get("sync_window") or {"from": start.isoformat(), "to": end.isoformat()},
+            "source": source,
+            "counts": {k: len(v) for k, v in data.items() if isinstance(v, list)},
+            "kpis": self.kpis,
+            "duration_s": round(duration_s, 2),
+        }
+        self.meta_path.write_text(json.dumps(self.meta, ensure_ascii=False, default=str), encoding="utf-8")
 
     def _build_index(self, data: dict[str, list[dict]]) -> None:
         docs, kpis = build_documents(data, self.settings.company_name, date.today())
@@ -82,15 +95,8 @@ class Pipeline:
                 data = await asyncio.to_thread(source.fetch, start, end)
                 save_snapshot(data, self.snapshot_path)
                 await asyncio.to_thread(self._build_index, data)
-                self.meta = {
-                    "last_sync": datetime.now(timezone.utc).isoformat(),
-                    "sync_window": {"from": start.isoformat(), "to": end.isoformat()},
-                    "source": source.name,
-                    "counts": {k: len(v) for k, v in data.items() if isinstance(v, list)},
-                    "kpis": self.kpis,
-                    "duration_s": round(time.perf_counter() - started, 2),
-                }
-                self.meta_path.write_text(json.dumps(self.meta, ensure_ascii=False, default=str), encoding="utf-8")
+                self.meta["sync_window"] = {"from": start.isoformat(), "to": end.isoformat()}
+                self._write_meta(data, source=source.name, duration_s=time.perf_counter() - started)
                 return self.status()
             finally:
                 self.syncing = False
