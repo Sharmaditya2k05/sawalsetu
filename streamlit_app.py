@@ -11,6 +11,7 @@ import html
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -182,6 +183,27 @@ def relative(iso: str | None) -> str:
     return f"{mins // 60} h ago" if mins < 1440 else f"{mins // 1440} d ago"
 
 
+def scroll_to_answer() -> None:
+    """Streamlit pins the page to the bottom whenever st.chat_input is on screen, which pushes a
+    fresh answer above the fold (the Sources column is longer). Scroll the question back into view."""
+    import streamlit.components.v1 as components
+
+    components.html(
+        f"""<script>
+        (function () {{
+          const doc = window.parent.document;
+          function go() {{
+            const qs = doc.querySelectorAll('.q');
+            const q = qs[qs.length - 1];
+            if (q) q.scrollIntoView({{block: 'start', behavior: 'instant'}});
+          }}
+          [50, 250, 600, 1200].forEach((t) => setTimeout(go, t));
+        }})();
+        </script><!-- {time.time()} -->""",
+        height=0,
+    )
+
+
 def render_answer(text: str) -> str:
     """Markdown with [n] citations turned into chips and the headline blockquote marked up."""
     text = re.sub(r"\[(\d{1,2})\](?!\()", lambda m: f'<span class="cite">[{m.group(1)}]</span>', text)
@@ -293,6 +315,10 @@ left, center, right = st.columns([1.0, 2.15, 1.45], gap="large")
 with left:
     st.html('<div class="wordmark">SawalSetu</div><div class="tagline">Ask your books</div><div style="height:22px"></div>')
     counts = status.get("counts", {})
+    llm = status["llm"]
+    ok, llm_label = llm_health(llm["provider"], (settings.groq_api_key or settings.anthropic_api_key)[-6:])
+    model_short = llm_label.split(" (")[0].split(" · ")[-1].split("/")[-1] if ok else "Not working"
+    model_color = "#0F5C4A" if ok else "#B3412E"
     pill_cls = "pill" if status["ready"] else "pill warn"
     pill_txt = f"Synced {relative(status['last_sync'])}" if status["ready"] else "Not synced"
     st.html(
@@ -306,6 +332,8 @@ with left:
             for k, label in (("sale_bills", "Sales invoices"), ("purchase_bills", "Purchase bills"),
                              ("ledgers", "Parties"), ("items", "Items"))
         )
+        + f'<div class="row"><span>AI model</span><b style="color:{model_color}" title="{esc(llm_label)}">'
+          f'{"●" if ok else "▲"} {esc(model_short)}</b></div>'
         + "</div></div>"
     )
     if st.button("⟳  Sync now", type="primary", use_container_width=True):
@@ -321,8 +349,6 @@ with left:
             st.session_state.pending = q
             st.rerun()
     fy_start = datetime.now().year if datetime.now().month >= 4 else datetime.now().year - 1
-    llm = status["llm"]
-    ok, llm_label = llm_health(llm["provider"], (settings.groq_api_key or settings.anthropic_api_key)[-6:])
     st.html(
         f'<div class="foot"><span>🏪&nbsp; {esc(status["company"])} · FY {fy_start}-{str(fy_start + 1)[-2:]}</span><span>⚙</span></div>'
         f'<div class="hint" style="color:{"#0F5C4A" if ok else "#B3412E"}">{"●" if ok else "▲"} {esc(llm_label)}</div>'
@@ -407,6 +433,7 @@ with center:
             placeholder = st.empty()
         history = [{"role": m["role"], "content": m["content"]} for m in msgs]
         text, sources = answer_stream(pending, history, placeholder, sources_box)
+        scroll_to_answer()
         msgs.append({"role": "user", "content": pending, "at": now})
         msgs.append({"role": "assistant", "content": text, "sources": sources, "at": now})
         latest_sources = sources
